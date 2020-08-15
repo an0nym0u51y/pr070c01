@@ -1,0 +1,13 @@
+#+OPTIONS: toc:nil
+
+* ~pr070c01~
+[[https://github.com/r3v2d0g/pr070c01/blob/main/LICENSE.txt][https://img.shields.io/crates/l/pr070c01.svg]]
+[[https://crates.io/crates/pr070c01][https://img.shields.io/crates/v/pr070c01.svg]]
+[[https://docs.rs/pr070c01][https://docs.rs/pr070c01/badge.svg]]
+
+** License
+#+BEGIN_QUOTE
+This Source Code Form is subject to the terms of the Mozilla Public
+License, v. 2.0. If a copy of the MPL was not distributed with this
+file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#+END_QUOTE
