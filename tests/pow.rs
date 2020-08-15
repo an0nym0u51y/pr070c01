@@ -8,18 +8,27 @@
 
 // =========================================== Imports ========================================== \\
 
-use p0w::{Proofs, Tree};
+use p0w::Tree;
 
-// ======================================== #[test] pow() ======================================= \\
+// ========================================= pow_size() ========================================= \\
 
-#[test]
-fn pow() {
-    //  8 =>  5158 bytes
-    // 12 => 20158 bytes
-    // 16 => 46118 bytes
-    // 18 => 61518 bytes
-    let tree = Tree::par_new("foobar", 8);
+fn pow_size(levels: usize) -> usize {
+    let tree = Tree::par_new("foobar", levels);
     let proofs = tree.gen_proofs();
 
-    println!("{}", bincode::serialized_size(&proofs).unwrap());
+    bincode::serialized_size(&proofs).unwrap() as usize
+}
+
+// ===================================== #[test] pow_sizes() ==================================== \\
+
+#[test]
+fn pow_sizes() {
+    //  8 =>  5158 bytes
+    assert_eq!(pow_size(8), 5158);
+    // 12 => 20158 bytes
+    assert_eq!(pow_size(12), 20158);
+    // 16 => 46118 bytes
+    assert_eq!(pow_size(16), 46118);
+    // 18 => 61518 bytes
+    assert_eq!(pow_size(18), 61518);
 }

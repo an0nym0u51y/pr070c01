@@ -362,6 +362,6 @@ impl Root {
     }
 
     pub fn verify_for(&self, id: &PublicKey) -> Result<()> {
-        Ok(id.verify(self.hash.as_bytes(), &self.root.sig)?)
+        Ok(id.verify(self.hash.as_bytes(), &self.sig)?)
     }
 }
