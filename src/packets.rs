@@ -31,11 +31,13 @@ pub trait Decode: Sized {
 // ============================================ Types =========================================== \\
 
 #[repr(u16)]
-#[derive(Eq, PartialEq, IntoPrimitive, TryFromPrimitive, Copy, Clone)]
+#[derive(Eq, PartialEq, IntoPrimitive, TryFromPrimitive, Copy, Clone, Debug)]
 pub enum PacketId {
-    Hello = 0,
+    Heartbeat = 0,
+    Hello = 1,
 }
 
+#[derive(Debug)]
 /// ## Encoding
 ///
 /// ```text
@@ -43,6 +45,18 @@ pub enum PacketId {
 ///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 /// +         Packet ID (0)         |                               |  4
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// ```
+pub struct Heartbeat;
+
+#[derive(Debug)]
+/// ## Encoding
+///
+/// ```text
+///  0                   1                   2                   3
+///  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+/// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/// +         Packet ID (1)         |                               |  4
 /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 /// |                                                               |  8
 /// +                                                               +
@@ -74,6 +88,7 @@ pub struct Hello {
     root: Root,
 }
 
+#[derive(Debug)]
 /// ## Encoding
 ///
 /// ```text
@@ -134,7 +149,33 @@ pub struct Root {
     sig: Signature,
 }
 
+// ======================================== macro_rules! ======================================== \\
+
+macro_rules! decode_bytes {
+    ([u8; $n:literal]) => {
+        impl Decode for [u8; $n] {
+            fn decode(buf: &[u8]) -> Result<(Self, usize)> {
+                if buf.len() < $n {
+                    return Err(Error::BufferSize {
+                        min: $n,
+                        actual: buf.len(),
+                    });
+                }
+
+                let mut arr = [0; $n];
+                arr[..].copy_from_slice(&buf[..$n]);
+
+                Ok((arr, $n))
+            }
+        }
+    };
+}
+
 // ========================================= impl Packet ======================================== \\
+
+impl Packet for Heartbeat {
+    const PACKET_ID: PacketId = PacketId::Heartbeat;
+}
 
 impl Packet for Hello {
     const PACKET_ID: PacketId = PacketId::Hello;
@@ -157,11 +198,21 @@ impl Encode for PacketId {
     }
 }
 
+impl Encode for Heartbeat {
+    fn encode(&self, buf: &mut [u8]) -> Result<usize> {
+        let mut offset = 0;
+        offset += Self::PACKET_ID.encode(&mut buf[offset..])?;
+        offset += [0; 2].encode(&mut buf[offset..])?;
+
+        Ok(offset)
+    }
+}
+
 impl Encode for Hello {
     fn encode(&self, buf: &mut [u8]) -> Result<usize> {
         let mut offset = 0;
         offset += Self::PACKET_ID.encode(&mut buf[offset..])?;
-        offset += 2;
+        offset += [0; 2].encode(&mut buf[offset..])?;
         offset += self.id.encode(&mut buf[offset..])?;
         offset += self.root.encode(&mut buf[offset..])?;
 
@@ -224,6 +275,21 @@ impl Encode for Signature {
     }
 }
 
+impl Encode for [u8] {
+    fn encode(&self, buf: &mut [u8]) -> Result<usize> {
+        if buf.len() < self.len() {
+            return Err(Error::BufferSize {
+                min: self.len(),
+                actual: buf.len(),
+            });
+        }
+
+        buf[0..self.len()].copy_from_slice(self);
+
+        Ok(self.len())
+    }
+}
+
 // ========================================= impl Decode ======================================== \\
 
 impl Decode for PacketId {
@@ -239,6 +305,24 @@ impl Decode for PacketId {
     }
 }
 
+impl Decode for Heartbeat {
+    fn decode(buf: &[u8]) -> Result<(Self, usize)> {
+        let mut offset = 0;
+
+        let (packet, bytes) = PacketId::decode(&buf[offset..])?;
+        if packet != Self::PACKET_ID {
+            return Err(Error::PacketId(packet));
+        }
+
+        offset += bytes;
+
+        let (_, bytes) = <[u8; 2]>::decode(&buf[offset..])?;
+        offset += bytes;
+
+        Ok((Heartbeat, offset))
+    }
+}
+
 impl Decode for Hello {
     fn decode(buf: &[u8]) -> Result<(Self, usize)> {
         let mut offset = 0;
@@ -249,7 +333,9 @@ impl Decode for Hello {
         }
 
         offset += bytes;
-        offset += 2;
+
+        let (_, bytes) = <[u8; 2]>::decode(&buf[offset..])?;
+        offset += bytes;
 
         let (id, bytes) = PublicKey::decode(&buf[offset..])?;
         offset += bytes;
@@ -311,6 +397,21 @@ impl Decode for Signature {
         }
 
         Ok((Signature::try_from(&buf[0..64])?, 64))
+    }
+}
+
+decode_bytes!([u8; 1]);
+decode_bytes!([u8; 2]);
+decode_bytes!([u8; 3]);
+decode_bytes!([u8; 4]);
+
+// ======================================= impl Heartbeat ======================================= \\
+
+impl Heartbeat {
+    // ==================================== Constructors ==================================== \\
+
+    pub const fn new() -> Self {
+        Heartbeat
     }
 }
 

@@ -15,6 +15,9 @@ use async_peek::{AsyncPeek, AsyncPeekExt};
 use futures_util::io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use snow::{HandshakeState, TransportState};
 
+#[cfg(feature = "thiserror")]
+use thiserror::Error;
+
 // ============================================ Types =========================================== \\
 
 pub struct Handshake {
@@ -30,25 +33,36 @@ pub struct Protocol {
 
 pub type Result<T> = core::result::Result<T, Error>;
 
+#[derive(Debug)]
+#[cfg_attr(feature = "thiserror", derive(Error))]
 pub enum Error {
+    #[cfg_attr(feature = "thiserror", error("buffer is too small (min={min};actual={actual})"))]
     BufferSize {
         min: usize,
         actual: usize,
     },
+    #[cfg_attr(feature = "thiserror", error("ed25519-related error ({0})"))]
     Ed25519(ed25519::SignatureError),
+    #[cfg_attr(feature = "thiserror", error("invalid packet size (max={max};actual={actual})"))]
     InvalidSize {
         max: usize,
         actual: usize,
     },
+    #[cfg_attr(feature = "thiserror", error("io-related error ({0})"))]
     Io(io::Error),
+    #[cfg_attr(feature = "thiserror", error("noise-related error ({0})"))]
     Noise(snow::Error),
+    #[cfg_attr(feature = "thiserror", error("invalid packet id ({0:?})"))]
     PacketId(PacketId),
+    #[cfg_attr(feature = "thiserror", error("unknown packet id ({0})"))]
     UnknownPacketId(u16),
 }
 
 // ========================================= Interfaces ========================================= \\
 
 trait NoiseState {
+    fn is_handshake(&self) -> bool;
+
     fn read_message(&mut self, message: &[u8], payload: &mut [u8]) -> Result<usize>;
 
     fn write_message(&mut self, payload: &[u8], message: &mut [u8]) -> Result<usize>;
@@ -77,7 +91,7 @@ where
 {
     let read = input.peek(&mut buf[0..2]).await?;
     if read != 2 {
-        todo!(); // FIXME
+        panic!("read != 2"); // FIXME
     }
 
     let len = u16::from_le_bytes([buf[0], buf[1]]) as usize;
@@ -86,7 +100,8 @@ where
             max: RAW_MAX_LEN,
             actual: len,
         });
-    } else if len - NOISE_OVERHEAD > msg.len() {
+    } else if len - NOISE_OVERHEAD > msg.len() && !state.is_handshake() {
+        // FIXME: handshake payload
         return Err(Error::BufferSize {
             min: len - NOISE_OVERHEAD,
             actual: msg.len(),
@@ -98,9 +113,9 @@ where
         });
     }
 
-    input.read_exact(&mut buf[0..2]).await?;
-    input.read_exact(&mut buf[0..len]).await?;
-    Ok(state.read_message(&buf, msg)?)
+    input.read_exact(&mut buf[..2]).await?;
+    input.read_exact(&mut buf[..len]).await?;
+    Ok(state.read_message(&buf[..len], msg)?)
 }
 
 async fn write<O, S>(
@@ -151,19 +166,18 @@ impl Handshake {
 
         // -> e     ; 56 bytes
         // <- e, ee ; 72 bytes
-        let mut buf = vec![0; 72];
-        let mut msg = vec![0; 0];
+        let mut buf = [0; 72];
 
-        write(&mut output, &mut state, &mut buf, &msg).await?;
+        write(&mut output, &mut state, &mut buf, &[]).await?;
         output.flush().await?;
-        read(input, &mut state, &mut buf, &mut msg).await?;
+        read(input, &mut state, &mut buf, &mut []).await?;
 
         Ok(Handshake {
             state: state.into_transport_mode()?,
         })
     }
 
-    pub async fn respond<I, O>(input: I, output: O) -> Result<Self>
+    pub async fn respond<I, O>(input: I, mut output: O) -> Result<Self>
     where
         I: AsyncPeek + AsyncRead + Unpin,
         O: AsyncWrite + Unpin,
@@ -173,11 +187,11 @@ impl Handshake {
 
         // -> e     ; 56 bytes
         // <- e, ee ; 72 bytes
-        let mut buf = vec![0; 72];
-        let mut msg = vec![0; 0];
+        let mut buf = [0; 72];
 
-        read(input, &mut state, &mut buf, &mut msg).await?;
-        write(output, &mut state, &mut buf, &msg).await?;
+        read(input, &mut state, &mut buf, &mut []).await?;
+        write(&mut output, &mut state, &mut buf, &[]).await?;
+        output.flush().await?;
 
         Ok(Handshake {
             state: state.into_transport_mode()?,
@@ -284,6 +298,11 @@ impl From<num_enum::TryFromPrimitiveError<PacketId>> for Error {
 
 impl NoiseState for HandshakeState {
     #[inline]
+    fn is_handshake(&self) -> bool {
+        true
+    }
+
+    #[inline]
     fn read_message(&mut self, message: &[u8], payload: &mut [u8]) -> Result<usize> {
         Ok(self.read_message(message, payload)?)
     }
@@ -295,6 +314,11 @@ impl NoiseState for HandshakeState {
 }
 
 impl NoiseState for TransportState {
+    #[inline]
+    fn is_handshake(&self) -> bool {
+        false
+    }
+
     #[inline]
     fn read_message(&mut self, message: &[u8], payload: &mut [u8]) -> Result<usize> {
         Ok(self.read_message(message, payload)?)
