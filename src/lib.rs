@@ -8,11 +8,9 @@
 
 // =========================================== Imports ========================================== \\
 
-pub mod packets;
-
-use self::packets::{Decode, Encode, Packet, PacketId};
 use async_peek::{AsyncPeek, AsyncPeekExt};
 use futures_util::io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use packets::{Decode, Packet, PacketId, MSG_MAX_LEN, NOISE_OVERHEAD, RAW_MAX_LEN};
 use snow::{HandshakeState, TransportState};
 
 #[cfg(feature = "thiserror")]
@@ -41,9 +39,7 @@ pub enum Error {
         min: usize,
         actual: usize,
     },
-    #[cfg_attr(feature = "thiserror", error("ed25519-related error ({0})"))]
-    Ed25519(ed25519::SignatureError),
-    #[cfg_attr(feature = "thiserror", error("invalid packet size (max={max};actual={actual})"))]
+    #[cfg_attr(feature = "thiserror", error("invalid data size (max={max};actual={actual})"))]
     InvalidSize {
         max: usize,
         actual: usize,
@@ -52,10 +48,8 @@ pub enum Error {
     Io(io::Error),
     #[cfg_attr(feature = "thiserror", error("noise-related error ({0})"))]
     Noise(snow::Error),
-    #[cfg_attr(feature = "thiserror", error("invalid packet id ({0:?})"))]
-    PacketId(PacketId),
-    #[cfg_attr(feature = "thiserror", error("unknown packet id ({0})"))]
-    UnknownPacketId(u16),
+    #[cfg_attr(feature = "thiserror", error("p4ck375-related error ({0})"))]
+    P4ck375(packets::Error),
 }
 
 // ========================================= Interfaces ========================================= \\
@@ -67,15 +61,6 @@ trait NoiseState {
 
     fn write_message(&mut self, payload: &[u8], message: &mut [u8]) -> Result<usize>;
 }
-
-// ========================================== Constants ========================================= \\
-
-const RAW_OVERHEAD: usize = 2;
-const NOISE_OVERHEAD: usize = 16;
-
-const RAW_MAX_LEN: usize = NOISE_MAX_LEN - RAW_OVERHEAD;
-const NOISE_MAX_LEN: usize = 65535;
-const MSG_MAX_LEN: usize = RAW_MAX_LEN - NOISE_OVERHEAD;
 
 // =========================================== Helpers ========================================== \\
 
@@ -231,7 +216,7 @@ impl Protocol {
     {
         let packet_id = self.peek_packet_id(input).await?;
         if packet_id != P::PACKET_ID {
-            return Err(Error::PacketId(packet_id));
+            return Err(packets::Error::WrongPacketId(packet_id).into());
         }
 
         match P::decode(&self.msg[0..self.next]) {
@@ -241,7 +226,7 @@ impl Protocol {
             }
             Err(err) => {
                 self.next = 0;
-                Err(err)
+                Err(err.into())
             }
         }
     }
@@ -258,20 +243,13 @@ impl Protocol {
             Ok((packet, _)) => Ok(packet),
             Err(err) => {
                 self.next = 0;
-                Err(err)
+                Err(err.into())
             }
         }
     }
 }
 
 // ========================================== impl From ========================================= \\
-
-impl From<ed25519::SignatureError> for Error {
-    #[inline]
-    fn from(error: ed25519::SignatureError) -> Self {
-        Error::Ed25519(error)
-    }
-}
 
 impl From<io::Error> for Error {
     #[inline]
@@ -287,10 +265,10 @@ impl From<snow::Error> for Error {
     }
 }
 
-impl From<num_enum::TryFromPrimitiveError<PacketId>> for Error {
+impl From<packets::Error> for Error {
     #[inline]
-    fn from(error: num_enum::TryFromPrimitiveError<PacketId>) -> Self {
-        Error::UnknownPacketId(error.number)
+    fn from(error: packets::Error) -> Self {
+        Error::P4ck375(error)
     }
 }
 
