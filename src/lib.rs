@@ -8,6 +8,8 @@
 
 // =========================================== Imports ========================================== \\
 
+pub use packets;
+
 use async_peek::{AsyncPeek, AsyncPeekExt};
 use futures_util::io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use packets::{Decode, Packet, PacketId, MSG_MAX_LEN, NOISE_OVERHEAD, RAW_MAX_LEN};
