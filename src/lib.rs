@@ -36,16 +36,16 @@ pub type Result<T> = core::result::Result<T, Error>;
 #[derive(Debug)]
 #[cfg_attr(feature = "thiserror", derive(Error))]
 pub enum Error {
-    #[cfg_attr(feature = "thiserror", error("buffer is too small (min={min};actual={actual})"))]
-    BufferSize {
-        min: usize,
-        actual: usize,
-    },
-    #[cfg_attr(feature = "thiserror", error("invalid data size (max={max};actual={actual})"))]
-    InvalidSize {
-        max: usize,
-        actual: usize,
-    },
+    #[cfg_attr(
+        feature = "thiserror",
+        error("buffer is too small (min={min};actual={actual})")
+    )]
+    BufferSize { min: usize, actual: usize },
+    #[cfg_attr(
+        feature = "thiserror",
+        error("invalid data size (max={max};actual={actual})")
+    )]
+    InvalidSize { max: usize, actual: usize },
     #[cfg_attr(feature = "thiserror", error("io-related error ({0})"))]
     Io(io::Error),
     #[cfg_attr(feature = "thiserror", error("noise-related error ({0})"))]
@@ -66,15 +66,15 @@ trait NoiseState {
 
 // =========================================== Helpers ========================================== \\
 
-async fn read<I, S>(
-    mut input: I,
-    state: &mut S,
+async fn read<Input, State>(
+    mut input: Input,
+    state: &mut State,
     buf: &mut [u8],
     msg: &mut [u8],
 ) -> Result<usize>
 where
-    I: AsyncPeek + AsyncRead + Unpin,
-    S: NoiseState,
+    Input: AsyncPeek + AsyncRead + Unpin,
+    State: NoiseState,
 {
     let read = input.peek(&mut buf[0..2]).await?;
     if read != 2 {
@@ -105,15 +105,15 @@ where
     Ok(state.read_message(&buf[..len], msg)?)
 }
 
-async fn write<O, S>(
-    mut output: O,
-    state: &mut S,
+async fn write<Output, State>(
+    mut output: Output,
+    state: &mut State,
     buf: &mut [u8],
     msg: &[u8],
 ) -> Result<usize>
 where
-    O: AsyncWrite + Unpin,
-    S: NoiseState,
+    Output: AsyncWrite + Unpin,
+    State: NoiseState,
 {
     if msg.len() > MSG_MAX_LEN {
         return Err(Error::InvalidSize {
@@ -143,13 +143,13 @@ impl Handshake {
 
     // ==================================== Constructors ==================================== \\
 
-    pub async fn initiate<I, O>(input: I, mut output: O) -> Result<Self>
+    pub async fn initiate<Input, Output>(input: Input, mut output: Output) -> Result<Self>
     where
-        I: AsyncPeek + AsyncRead + Unpin,
-        O: AsyncWrite + Unpin,
+        Input: AsyncPeek + AsyncRead + Unpin,
+        Output: AsyncWrite + Unpin,
     {
-        let mut state = snow::Builder::new(Self::NOISE_PATTERN.parse().unwrap())
-            .build_initiator()?;
+        let mut state =
+            snow::Builder::new(Self::NOISE_PATTERN.parse().unwrap()).build_initiator()?;
 
         // -> e     ; 56 bytes
         // <- e, ee ; 72 bytes
@@ -164,13 +164,13 @@ impl Handshake {
         })
     }
 
-    pub async fn respond<I, O>(input: I, mut output: O) -> Result<Self>
+    pub async fn respond<Input, Output>(input: Input, mut output: Output) -> Result<Self>
     where
-        I: AsyncPeek + AsyncRead + Unpin,
-        O: AsyncWrite + Unpin,
+        Input: AsyncPeek + AsyncRead + Unpin,
+        Output: AsyncWrite + Unpin,
     {
-        let mut state = snow::Builder::new(Self::NOISE_PATTERN.parse().unwrap())
-            .build_responder()?;
+        let mut state =
+            snow::Builder::new(Self::NOISE_PATTERN.parse().unwrap()).build_responder()?;
 
         // -> e     ; 56 bytes
         // <- e, ee ; 72 bytes
@@ -202,10 +202,10 @@ impl Handshake {
 impl Protocol {
     // ===================================== Read+Write ===================================== \\
 
-    pub async fn send<O, P>(&mut self, output: O, packet: P) -> Result<usize>
+    pub async fn send<Output, Packt>(&mut self, output: Output, packet: Packt) -> Result<usize>
     where
-        O: AsyncWrite + Unpin,
-        P: Packet,
+        Output: AsyncWrite + Unpin,
+        Packt: Packet,
     {
         let len = packet.encode(&mut self.msg)?;
         write(output, &mut self.state, &mut self.buf, &self.msg[0..len]).await
@@ -233,9 +233,9 @@ impl Protocol {
         }
     }
 
-    pub async fn peek_packet_id<I>(&mut self, input: I) -> Result<PacketId>
+    pub async fn peek_packet_id<Input>(&mut self, input: Input) -> Result<PacketId>
     where
-        I: AsyncPeek + AsyncRead + Unpin,
+        Input: AsyncPeek + AsyncRead + Unpin,
     {
         if self.next == 0 {
             self.next = read(input, &mut self.state, &mut self.buf, &mut self.msg).await?;
