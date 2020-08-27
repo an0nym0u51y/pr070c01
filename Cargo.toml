@@ -36,6 +36,7 @@ optional = true
 [dependencies.packets]
 package = "p4ck375"
 git = "https://github.com/an0nym0u51y/p4ck375.git"
+branch = "main"
 
 [dev-dependencies]
 smol = "0.3"
