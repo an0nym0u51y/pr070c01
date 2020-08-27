@@ -21,7 +21,7 @@ git = "https://github.com/r3v2d0g/snow.git"
 branch = "patch-1"
 
 [dependencies]
-async-peek = "0.2"
+async-peek = "0.3"
 snow = "0.7"
 
 [dependencies.futures-util]
@@ -43,5 +43,5 @@ smol = "0.3"
 ufut = "0.2"
 
 [dev-dependencies.async-peek]
-version = "0.2"
+version = "0.3"
 features = ["async-io"]
