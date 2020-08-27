@@ -8,7 +8,7 @@
 
 // =========================================== Imports ========================================== \\
 
-pub use packets;
+pub use packets::{self, NodeId};
 
 use async_peek::{AsyncPeek, AsyncPeekExt};
 use futures_util::io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
