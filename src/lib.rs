@@ -12,7 +12,7 @@ pub use packets::{self, NodeId};
 
 use async_peek::{AsyncPeek, AsyncPeekExt};
 use futures_util::io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use packets::{Decode, PacketId, MSG_MAX_LEN, NOISE_OVERHEAD, RAW_MAX_LEN};
+use packets::{Decode, Encode, PacketId, MSG_MAX_LEN, NOISE_OVERHEAD, RAW_MAX_LEN};
 use snow::{HandshakeState, TransportState};
 
 #[cfg(feature = "thiserror")]
@@ -205,7 +205,7 @@ impl Protocol {
     pub async fn send<Output, Packet>(&mut self, output: Output, packet: Packet) -> Result<usize>
     where
         Output: AsyncWrite + Unpin,
-        Packet: packets::Packet,
+        Packet: packets::Packet + Encode,
     {
         let len = packet.encode(&mut self.msg)?;
         write(output, &mut self.state, &mut self.buf, &self.msg[0..len]).await
@@ -214,7 +214,7 @@ impl Protocol {
     pub async fn try_recv<Input, Packet>(&mut self, input: Input) -> Result<Packet>
     where
         Input: AsyncPeek + AsyncRead + Unpin,
-        Packet: packets::Packet,
+        Packet: packets::Packet + Decode,
     {
         let packet_id = self.peek_packet_id(input).await?;
         if packet_id != Packet::PACKET_ID {
