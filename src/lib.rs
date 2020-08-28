@@ -12,7 +12,7 @@ pub use packets::{self, NodeId};
 
 use async_peek::{AsyncPeek, AsyncPeekExt};
 use futures_util::io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use packets::{Decode, Packet, PacketId, MSG_MAX_LEN, NOISE_OVERHEAD, RAW_MAX_LEN};
+use packets::{Decode, PacketId, MSG_MAX_LEN, NOISE_OVERHEAD, RAW_MAX_LEN};
 use snow::{HandshakeState, TransportState};
 
 #[cfg(feature = "thiserror")]
@@ -202,26 +202,26 @@ impl Handshake {
 impl Protocol {
     // ===================================== Read+Write ===================================== \\
 
-    pub async fn send<Output, Packt>(&mut self, output: Output, packet: Packt) -> Result<usize>
+    pub async fn send<Output, Packet>(&mut self, output: Output, packet: Packet) -> Result<usize>
     where
         Output: AsyncWrite + Unpin,
-        Packt: Packet,
+        Packet: packets::Packet,
     {
         let len = packet.encode(&mut self.msg)?;
         write(output, &mut self.state, &mut self.buf, &self.msg[0..len]).await
     }
 
-    pub async fn try_recv<Input, Packt>(&mut self, input: Input) -> Result<Packt>
+    pub async fn try_recv<Input, Packet>(&mut self, input: Input) -> Result<Packet>
     where
         Input: AsyncPeek + AsyncRead + Unpin,
-        Packt: Packet,
+        Packet: packets::Packet,
     {
         let packet_id = self.peek_packet_id(input).await?;
-        if packet_id != P::PACKET_ID {
+        if packet_id != Packet::PACKET_ID {
             return Err(packets::Error::WrongPacketId(packet_id).into());
         }
 
-        match P::decode(&self.msg[0..self.next]) {
+        match Packet::decode(&self.msg[0..self.next]) {
             Ok((packet, bytes)) => {
                 self.next -= bytes;
                 Ok(packet)
