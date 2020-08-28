@@ -35,7 +35,7 @@ optional = true
 
 [dependencies.packets]
 package = "p4ck375"
-git = "https://git.r3vd5u3d.network/~r3v2d0g/p4ck375.git"
+git = "https://git.r3vd5u3d.network/~r3v2d0g/p4ck375"
 branch = "main"
 
 [dev-dependencies]
