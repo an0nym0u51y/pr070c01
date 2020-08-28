@@ -211,10 +211,10 @@ impl Protocol {
         write(output, &mut self.state, &mut self.buf, &self.msg[0..len]).await
     }
 
-    pub async fn try_recv<I, P>(&mut self, input: I) -> Result<P>
+    pub async fn try_recv<Input, Packt>(&mut self, input: Input) -> Result<Packt>
     where
-        I: AsyncPeek + AsyncRead + Unpin,
-        P: Packet,
+        Input: AsyncPeek + AsyncRead + Unpin,
+        Packt: Packet,
     {
         let packet_id = self.peek_packet_id(input).await?;
         if packet_id != P::PACKET_ID {

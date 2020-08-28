@@ -3,7 +3,7 @@ name = "pr070c01"
 description = ""
 version = "0.0.0"
 homepage = "https://github.com/r3v2d0g/pr070c01"
-repository = "https://github.com/r3v2d0g/pr070c01.git"
+repository = "https://git.r3vd5u3d.network/~r3v2d0g/pr070c01"
 documentation = "https://docs.rs/pr070c01"
 keywords = []
 categories = []
@@ -35,7 +35,7 @@ optional = true
 
 [dependencies.packets]
 package = "p4ck375"
-git = "https://github.com/an0nym0u51y/p4ck375.git"
+git = "https://git.r3vd5u3d.network/~r3v2d0g/p4ck375.git"
 branch = "main"
 
 [dev-dependencies]
