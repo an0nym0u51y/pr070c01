@@ -24,6 +24,11 @@ branch = "patch-1"
 async-peek = "0.3"
 snow = "0.7"
 
+[dependencies.format]
+package = "f0rm47"
+git = "https://git.r3vd5u3d.network/~r3v2d0g/f0rm47"
+branch = "main"
+
 [dependencies.futures-util]
 version = "0.3"
 default-features = false

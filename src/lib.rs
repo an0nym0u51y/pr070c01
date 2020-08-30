@@ -8,11 +8,13 @@
 
 // =========================================== Imports ========================================== \\
 
-pub use packets::{self, NodeId};
+pub use packets::{self, NodeId, Packet};
 
 use async_peek::{AsyncPeek, AsyncPeekExt};
+use core::ops::Range;
+use format::{Decode, Encode};
 use futures_util::io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use packets::{Decode, Encode, PacketId, MSG_MAX_LEN, NOISE_OVERHEAD, RAW_MAX_LEN};
+use packets::{MSG_MAX_LEN, NOISE_OVERHEAD, RAW_MAX_LEN};
 use snow::{HandshakeState, TransportState};
 
 #[cfg(feature = "thiserror")]
@@ -27,7 +29,7 @@ pub struct Handshake {
 pub struct Protocol {
     buf: Vec<u8>,
     msg: Vec<u8>,
-    next: usize,
+    next: Range<usize>,
     state: TransportState,
 }
 
@@ -191,7 +193,7 @@ impl Handshake {
         Protocol {
             buf: vec![0; RAW_MAX_LEN],
             msg: vec![0; MSG_MAX_LEN],
-            next: 0,
+            next: 0..0,
             state: self.state,
         }
     }
@@ -202,49 +204,32 @@ impl Handshake {
 impl Protocol {
     // ===================================== Read+Write ===================================== \\
 
-    pub async fn send<Output, Packet>(&mut self, output: Output, packet: Packet) -> Result<usize>
+    pub async fn send<Output>(&mut self, output: Output, packet: Packet) -> Result<usize>
     where
         Output: AsyncWrite + Unpin,
-        Packet: packets::Packet + Encode,
     {
-        let len = packet.encode(&mut self.msg)?;
-        write(output, &mut self.state, &mut self.buf, &self.msg[0..len]).await
+        let (bytes, _) = packet.encode(&mut self.msg)?;
+        write(output, &mut self.state, &mut self.buf, &self.msg[0..bytes]).await
     }
 
-    pub async fn try_recv<Input, Packet>(&mut self, input: Input) -> Result<Packet>
+    pub async fn recv<Input>(&mut self, input: Input) -> Result<Packet>
     where
         Input: AsyncPeek + AsyncRead + Unpin,
-        Packet: packets::Packet + Decode,
     {
-        let packet_id = self.peek_packet_id(input).await?;
-        if packet_id != Packet::PACKET_ID {
-            return Err(packets::Error::WrongPacketId(packet_id).into());
+        if self.next.end - self.next.start == 0 {
+            self.next.start = 0;
+            self.next.end = read(input, &mut self.state, &mut self.buf, &mut self.msg).await?;
         }
 
-        match Packet::decode(&self.msg[0..self.next]) {
-            Ok((packet, bytes)) => {
-                self.next -= bytes;
+        match Packet::decode(&self.msg[self.next.start..self.next.end]) {
+            Ok((packet, rest)) => {
+                self.next.start = self.next.end - rest.len();
+               
                 Ok(packet)
             }
             Err(err) => {
-                self.next = 0;
-                Err(err.into())
-            }
-        }
-    }
+                self.next.end = self.next.start;
 
-    pub async fn peek_packet_id<Input>(&mut self, input: Input) -> Result<PacketId>
-    where
-        Input: AsyncPeek + AsyncRead + Unpin,
-    {
-        if self.next == 0 {
-            self.next = read(input, &mut self.state, &mut self.buf, &mut self.msg).await?;
-        }
-
-        match PacketId::decode(&self.msg[0..self.next]) {
-            Ok((packet, _)) => Ok(packet),
-            Err(err) => {
-                self.next = 0;
                 Err(err.into())
             }
         }
