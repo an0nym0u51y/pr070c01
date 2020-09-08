@@ -8,55 +8,41 @@
 
 // =========================================== Imports ========================================== \\
 
-use async_peek::AsyncPeekExt;
-use pr070c01::{packets, Error, Handshake, Protocol};
-use smol::{Async, Task};
-use std::net::{TcpListener, TcpStream, ToSocketAddrs};
+use async_net::{TcpListener, TcpStream};
+use futures_lite::future;
+use pr070c01::{Handshake, Packet, Result};
 
 // ======================================= #[test] hello() ====================================== \\
 
 #[test]
-fn hello() -> Result<(), Error> {
-    smol::run(ahello())
-}
+fn hello() -> Result<()> {
+    smol::block_on(async {
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
 
-async fn ahello() -> Result<(), Error> {
-    let addr = "127.0.0.1:0".to_socket_addrs()?.next().unwrap();
-    let listener = Async::<TcpListener>::bind(addr)?;
+        let initiate = smol::spawn(async move {
+            let stream = TcpStream::connect(addr).await?;
+            let proto = Handshake::initiate(&stream, &stream).await?.done()?;
 
-    let addr = listener.get_ref().local_addr()?;
+            Result::Ok((stream, proto))
+        });
 
-    let initiate = Task::spawn(async move {
-        let mut stream = Async::<TcpStream>::connect(addr).await?;
+        let respond = smol::spawn(async move {
+            let (stream, _) = listener.accept().await?;
+            let proto = Handshake::respond(&stream, &stream).await?.done()?;
 
-        Result::<_, Error>::Ok((initiate(&stream).await?, stream))
-    });
+            Result::Ok((stream, proto))
+        });
 
-    let respond = Task::spawn(async move {
-        let (mut stream, _) = listener.accept().await?;
+        let ((istream, mut iproto), (rstream, mut rproto)) =
+            future::try_zip(initiate, respond).await?;
 
-        Result::<_, Error>::Ok((respond(&stream).await?, stream, listener))
-    });
+        iproto.send(&istream, Packet::heartbeat()).await?;
+        assert!(rproto.recv(&rstream).await?.is_heartbeat());
 
-    let (initiator, responder) = ufut::zip(initiate, respond).await;
-    let (mut pinit, mut sinit) = initiator?;
-    let (mut presp, mut sresp, _listener) = responder?;
+        rproto.send(&rstream, Packet::heartbeat()).await?;
+        assert!(iproto.recv(&istream).await?.is_heartbeat());
 
-    pinit.send(&sinit, packets::Heartbeat).await?;
-    let packet = presp.try_recv::<_, packets::Heartbeat>(&sresp).await?;
-    dbg!(packet);
-
-    presp.send(&sresp, packets::Heartbeat).await?;
-    let packet = pinit.try_recv::<_, packets::Heartbeat>(&sinit).await?;
-    dbg!(packet);
-
-    Ok(())
-}
-
-async fn initiate(stream: &Async<TcpStream>) -> Result<Protocol, Error> {
-    Ok(Handshake::initiate(stream, stream).await?.done())
-}
-
-async fn respond(stream: &Async<TcpStream>) -> Result<Protocol, Error> {
-    Ok(Handshake::respond(stream, stream).await?.done())
+        Ok(())
+    })
 }

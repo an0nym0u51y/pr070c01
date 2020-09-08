@@ -40,9 +40,10 @@ git = "https://git.r3vd5u3d.network/~r3v2d0g/p4ck375"
 branch = "main"
 
 [dev-dependencies]
-smol = "0.3"
-ufut = "0.2"
+async-net = "1.2"
+futures-lite = "1.3"
+smol = "1.0"
 
 [dev-dependencies.async-peek]
 version = "0.3"
-features = ["async-io"]
+features = ["async-net"]
