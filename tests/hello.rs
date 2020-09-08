@@ -22,14 +22,14 @@ fn hello() -> Result<()> {
 
         let initiate = smol::spawn(async move {
             let stream = TcpStream::connect(addr).await?;
-            let proto = Handshake::initiate(&stream, &stream).await?.done()?;
+            let proto = Handshake::initiate(&stream).await?.done()?;
 
             Result::Ok((stream, proto))
         });
 
         let respond = smol::spawn(async move {
             let (stream, _) = listener.accept().await?;
-            let proto = Handshake::respond(&stream, &stream).await?.done()?;
+            let proto = Handshake::respond(&stream).await?.done()?;
 
             Result::Ok((stream, proto))
         });

@@ -19,54 +19,65 @@ use snow::HandshakeState;
 
 // ============================================ Types =========================================== \\
 
-pub struct Initiate<Input, Output> {
-    inner: InitiateInner<Input, Output>,
+pub struct Initiate<IO> {
+    inner: InitiateInner<IO>,
 }
 
-enum InitiateInner<Input, Output> {
+enum InitiateInner<IO> {
     Empty,
     State {
-        inp: Input,
-        out: Output,
+        io: IO,
     },
     Write {
-        inp: Input,
-        write: Write<Output, HandshakeState>,
+        write: Write<IO, HandshakeState>,
     },
     Flush {
         buf: Vec<u8>,
-        inp: Input,
-        out: Output,
+        io: IO,
         state: HandshakeState,
     },
     Read {
-        read: Read<Input, HandshakeState>,
+        read: Read<IO, HandshakeState>,
+    },
+    Done {
+        io: IO,
     },
 }
 
 // ======================================== impl Initiate ======================================= \\
 
-impl<Input, Output> Initiate<Input, Output> {
+impl<IO> Initiate<IO> {
     // ==================================== Constructors ==================================== \\
 
     #[inline]
-    pub(super) fn new(inp: Input, out: Output) -> Self
+    pub(super) fn new(io: IO) -> Self
     where
-        Input: AsyncPeek + AsyncRead + Unpin,
-        Output: AsyncWrite + Unpin,
+        IO: AsyncPeek + AsyncRead + AsyncWrite + Unpin,
     {
         Initiate {
-            inner: InitiateInner::State { inp, out },
+            inner: InitiateInner::State { io },
+        }
+    }
+
+    // ===================================== Destructors ==================================== \\
+
+    pub fn done(self) -> IO {
+        match self.inner {
+            InitiateInner::Empty => panic!(),
+            InitiateInner::State { io }
+            | InitiateInner::Flush { io, .. }
+            | InitiateInner::Done { io } => io,
+            InitiateInner::Write { write } => write.done().2,
+            InitiateInner::Read { read } => read.done().2,
         }
     }
 }
 
 // ========================================= impl Future ======================================== \\
 
-impl<Input, Output> Future for Initiate<Input, Output>
+impl<IO> Future for Initiate<IO>
 where
-    Input: AsyncPeek + AsyncRead + Unpin,
-    Output: AsyncWrite + Unpin,
+    IO: AsyncPeek + AsyncRead + AsyncWrite + Unpin,
 {
     type Output = Result<Handshake>;
 
@@ -74,8 +85,8 @@ where
         let inner = &mut self.get_mut().inner;
         loop {
             match mem::take(inner) {
-                InitiateInner::Empty => panic!(),
-                InitiateInner::State { inp, out } => {
+                InitiateInner::Empty | InitiateInner::Done { .. } => panic!(),
+                InitiateInner::State { io } => {
                     let state = snow::Builder::new(Handshake::NOISE_PATTERN.parse().unwrap())
                         .build_initiator()?;
 
@@ -84,41 +95,37 @@ where
                     let buf = vec![0; 72];
 
                     *inner = InitiateInner::Write {
-                        inp,
-                        write: Write::new(Vec::new(), buf, out, state),
+                        write: Write::new(Vec::new(), buf, io, state),
                     };
                 }
-                InitiateInner::Write { inp, mut write } => {
+                InitiateInner::Write { mut write } => {
                     if Pin::new(&mut write).poll(ctx)?.is_ready() {
-                        let (_, buf, out, state) = write.done();
+                        let (_, buf, io, state) = write.done();
 
                         *inner = InitiateInner::Flush {
                             buf,
-                            inp,
-                            out,
+                            io,
                             state,
                         };
                     } else {
-                        *inner = InitiateInner::Write { inp, write };
+                        *inner = InitiateInner::Write { write };
 
                         return Poll::Pending;
                     }
                 }
                 InitiateInner::Flush {
                     buf,
-                    inp,
-                    mut out,
+                    mut io,
                     state,
                 } => {
-                    if Pin::new(&mut out).poll_flush(ctx)?.is_ready() {
+                    if Pin::new(&mut io).poll_flush(ctx)?.is_ready() {
                         *inner = InitiateInner::Read {
-                            read: Read::new(Vec::new(), buf, inp, state),
+                            read: Read::new(Vec::new(), buf, io, state),
                         };
                     } else {
                         *inner = InitiateInner::Flush {
                             buf,
-                            inp,
-                            out,
+                            io,
                             state,
                         };
 
@@ -127,7 +134,9 @@ where
                 }
                 InitiateInner::Read { mut read } => {
                     if Pin::new(&mut read).poll(ctx)?.is_ready() {
-                        let (_, _, _, state) = read.done();
+                        let (_, _, io, state) = read.done();
+
+                        *inner = InitiateInner::Done { io };
 
                         return Poll::Ready(Ok(Handshake { state }));
                     } else {
@@ -143,7 +152,7 @@ where
 
 // ======================================== impl Default ======================================== \\
 
-impl<Input, Output> Default for InitiateInner<Input, Output> {
+impl<IO> Default for InitiateInner<IO> {
     #[inline]
     fn default() -> Self {
         InitiateInner::Empty

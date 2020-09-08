@@ -81,20 +81,20 @@ impl Handshake {
 
     // ==================================== Constructors ==================================== \\
 
-    pub fn initiate<Input, Output>(input: Input, output: Output) -> Initiate<Input, Output>
+    #[inline]
+    pub fn initiate<IO>(io: IO) -> Initiate<IO>
     where
-        Input: AsyncPeek + AsyncRead + Unpin,
-        Output: AsyncWrite + Unpin,
+        IO: AsyncPeek + AsyncRead + AsyncWrite + Unpin,
     {
-        Initiate::new(input, output)
+        Initiate::new(io)
     }
 
-    pub fn respond<Input, Output>(input: Input, output: Output) -> Respond<Input, Output>
+    #[inline]
+    pub fn respond<IO>(io: IO) -> Respond<IO>
     where
-        Input: AsyncPeek + AsyncRead + Unpin,
-        Output: AsyncWrite + Unpin,
+        IO: AsyncPeek + AsyncRead + AsyncWrite + Unpin,
     {
-        Respond::new(input, output)
+        Respond::new(io)
     }
 
     // ===================================== Destructors ==================================== \\
@@ -113,14 +113,16 @@ impl Handshake {
 impl Protocol {
     // ===================================== Read+Write ===================================== \\
 
-    pub fn send<Output>(&mut self, output: Output, packet: Packet) -> Send<'_, Output>
+    #[inline]
+    pub fn send<Output>(&mut self, output: Output, packet: Packet) -> Send<Output>
     where
         Output: AsyncWrite + Unpin,
     {
         Send::new(packet, self, output)
     }
 
-    pub fn recv<Input>(&mut self, input: Input) -> Recv<'_, Input>
+    #[inline]
+    pub fn recv<Input>(&mut self, input: Input) -> Recv<Input>
     where
         Input: AsyncPeek + AsyncRead + Unpin,
     {

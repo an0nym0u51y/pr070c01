@@ -19,52 +19,64 @@ use snow::HandshakeState;
 
 // ============================================ Types =========================================== \\
 
-pub struct Respond<Input, Output> {
-    inner: RespondInner<Input, Output>,
+pub struct Respond<IO> {
+    inner: RespondInner<IO>,
 }
 
-enum RespondInner<Input, Output> {
+enum RespondInner<IO> {
     Empty,
     State {
-        inp: Input,
-        out: Output,
+        io: IO,
     },
     Read {
-        out: Output,
-        read: Read<Input, HandshakeState>,
+        read: Read<IO, HandshakeState>,
     },
     Write {
-        write: Write<Output, HandshakeState>,
+        write: Write<IO, HandshakeState>,
     },
     Flush {
-        out: Output,
+        io: IO,
         state: HandshakeState,
+    },
+    Done {
+        io: IO,
     },
 }
 
 // ======================================== impl Respond ======================================== \\
 
-impl<Input, Output> Respond<Input, Output> {
+impl<IO> Respond<IO> {
     // ==================================== Constructors ==================================== \\
 
     #[inline]
-    pub(super) fn new(inp: Input, out: Output) -> Self
+    pub(super) fn new(io: IO) -> Self
     where
-        Input: AsyncPeek + AsyncRead + Unpin,
-        Output: AsyncWrite + Unpin,
+        IO: AsyncPeek + AsyncRead + AsyncWrite + Unpin,
     {
         Respond {
-            inner: RespondInner::State { inp, out },
+            inner: RespondInner::State { io },
+        }
+    }
+
+    // ===================================== Destructors ==================================== \\
+
+    pub fn done(self) -> IO {
+        match self.inner {
+            RespondInner::Empty => panic!(),
+            RespondInner::State { io }
+            | RespondInner::Flush { io, .. }
+            | RespondInner::Done { io } => io,
+            RespondInner::Read { read } => read.done().2,
+            RespondInner::Write { write } => write.done().2,
         }
     }
 }
 
 // ========================================= impl Future ======================================== \\
 
-impl<Input, Output> Future for Respond<Input, Output>
+impl<IO> Future for Respond<IO>
 where
-    Input: AsyncPeek + AsyncRead + Unpin,
-    Output: AsyncWrite + Unpin,
+    IO: AsyncPeek + AsyncRead + AsyncWrite + Unpin,
 {
     type Output = Result<Handshake>;
 
@@ -72,8 +84,8 @@ where
         let inner = &mut self.get_mut().inner;
         loop {
             match mem::take(inner) {
-                RespondInner::Empty => panic!(),
-                RespondInner::State { inp, out } => {
+                RespondInner::Empty | RespondInner::Done { .. } => panic!(),
+                RespondInner::State { io } => {
                     let state = snow::Builder::new(Handshake::NOISE_PATTERN.parse().unwrap())
                         .build_responder()?;
 
@@ -82,39 +94,40 @@ where
                     let buf = vec![0; 72];
 
                     *inner = RespondInner::Read {
-                        out,
-                        read: Read::new(Vec::new(), buf, inp, state),
+                        read: Read::new(Vec::new(), buf, io, state),
                     };
                 }
-                RespondInner::Read { out, mut read } => {
+                RespondInner::Read { mut read } => {
                     if Pin::new(&mut read).poll(ctx)?.is_ready() {
-                        let (_, buf, _, state) = read.done();
+                        let (_, buf, io, state) = read.done();
 
                         *inner = RespondInner::Write {
-                            write: Write::new(Vec::new(), buf, out, state),
+                            write: Write::new(Vec::new(), buf, io, state),
                         };
                     } else {
-                        *inner = RespondInner::Read { out, read };
+                        *inner = RespondInner::Read { read };
 
                         return Poll::Pending;
                     }
                 }
                 RespondInner::Write { mut write } => {
                     if Pin::new(&mut write).poll(ctx)?.is_ready() {
-                        let (_, _, out, state) = write.done();
+                        let (_, _, io, state) = write.done();
 
-                        *inner = RespondInner::Flush { out, state };
+                        *inner = RespondInner::Flush { io, state };
                     } else {
                         *inner = RespondInner::Write { write };
 
                         return Poll::Pending;
                     }
                 }
-                RespondInner::Flush { mut out, state } => {
-                    if Pin::new(&mut out).poll_flush(ctx)?.is_ready() {
+                RespondInner::Flush { mut io, state } => {
+                    if Pin::new(&mut io).poll_flush(ctx)?.is_ready() {
+                        *inner = RespondInner::Done { io };
+
                         return Poll::Ready(Ok(Handshake { state }));
                     } else {
-                        *inner = RespondInner::Flush { out, state };
+                        *inner = RespondInner::Flush { io, state };
 
                         return Poll::Pending;
                     }
@@ -126,7 +139,7 @@ where
 
 // ======================================== impl Default ======================================== \\
 
-impl<Input, Output> Default for RespondInner<Input, Output> {
+impl<IO> Default for RespondInner<IO> {
     #[inline]
     fn default() -> Self {
         RespondInner::Empty

@@ -18,7 +18,6 @@ use futures_io::AsyncRead;
 use packets::{NOISE_OVERHEAD, RAW_MAX_LEN};
 
 // ============================================ Types =========================================== \\
-
 pub(super) struct Read<Input, State, Buf = Vec<u8>> {
     inner: ReadInner<Input, State, Buf>,
 }
